@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glassdoor Review Predictor</title>
+    <base href="/employee-review-prediction/">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Glassdoor Review Predictor</h1>
+        <p class="subtitle">Will employees recommend this company?</p>
+
+        <form id="reviewForm">
+            <div class="form-group">
+                <label for="title">Review Title *</label>
+                <textarea id="title" placeholder="e.g., Great place to work" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="pros">Pros *</label>
+                <textarea id="pros" placeholder="e.g., Supportive team, good benefits" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="cons">Cons *</label>
+                <textarea id="cons" placeholder="e.g., Long hours, limited growth" required></textarea>
+            </div>
+
+            <button type="submit" onclick="currentSampleData = null">Predict Review Above</button>
+            <button type="button" class="sample-btn" onclick="loadSampleData().then(() => predictReview())">Predict Using 2023 Data</button>
+        </form>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Making prediction...</p>
+        </div>
+
+        <div class="result" id="result"></div>
+
+        <div class="actual-result" id="actualResult"></div>
+
+        <div class="error" id="error"></div>
+    </div>
+
+    <script>
+        const API_URL = 'https://glassdoor-model-deployment.vercel.app';
+
+        let currentSampleData = null;
+
+        document.getElementById('reviewForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await predictReview();
+        });
+
+        async function predictReview() {
+            const title = document.getElementById('title').value;
+            const pros = document.getElementById('pros').value;
+            const cons = document.getElementById('cons').value;
+
+            const loading = document.getElementById('loading');
+            const resultDiv = document.getElementById('result');
+            const actualResultDiv = document.getElementById('actualResult');
+            const errorDiv = document.getElementById('error');
+
+            loading.classList.add('show');
+            resultDiv.classList.remove('show');
+            actualResultDiv.classList.remove('show');
+            errorDiv.classList.remove('show');
+
+            try {
+                const response = await fetch(`${API_URL}/predict`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        title,
+                        pros,
+                        cons
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Display result
+                const resultClass = data.label === 'recommend' ? 'recommend' : 'not-recommend';
+                const displayLabel = data.label === 'recommend' ? 'RECOMMENDED' : 'NOT RECOMMENDED';
+
+                const confidence = data.label === 'recommend'
+                    ? (data.probability_recommend * 100).toFixed(1)
+                    : (data.probability_not_recommend * 100).toFixed(1);
+
+                resultDiv.className = `result show ${resultClass}`;
+                resultDiv.innerHTML = `
+                    <div class="result-label">Prediction: ${displayLabel} (${confidence}% sure)</div>
+                `;
+
+                // Show actual result if a sample was loaded
+                if (currentSampleData) {
+                    const actualRecommend = currentSampleData.recommend === 1 || currentSampleData.recommend === true;
+                    const actualLabel = actualRecommend ? 'Recommended' : 'Not Recommended';
+                    const rating = currentSampleData.rating_overall;
+                    const stars = rating ? '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating)) : 'N/A';
+
+                    const formatField = (val) => (val === null || val === undefined) ? 'N/A' : val;
+
+                    actualResultDiv.classList.add('show');
+                    actualResultDiv.innerHTML = `
+                        <div class="actual-result-label">📋 Actual Review Data</div>
+                        <div class="actual-grid">
+                            <span>Recommendation:</span><span>${actualLabel}</span>
+                            <span>Overall Rating:</span><span><span class="stars">${stars}</span> (${formatField(rating)}/5)</span>
+                            <span>Company:</span><span>${formatField(currentSampleData.company)}</span>
+                            <span>Job Title:</span><span>${formatField(currentSampleData.job_title)}</span>
+                            <span>Current Employee:</span><span>${currentSampleData.is_current_employee ? 'Yes' : 'No'}</span>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                errorDiv.classList.add('show');
+                errorDiv.innerHTML = `<strong>Error:</strong> ${error.message}. Make sure the API is running.`;
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+
+        async function loadSampleData() {
+            try {
+                const response = await fetch(`${API_URL}/sample-data`);
+                if (!response.ok) {
+                    throw new Error('Failed to load sample data');
+                }
+
+                const data = await response.json();
+
+                // Store sample data for actual result display
+                currentSampleData = data;
+
+                // Map the data fields to the form
+                document.getElementById('title').value = data.review_title || '';
+                document.getElementById('pros').value = data.pros || '';
+                document.getElementById('cons').value = data.cons || '';
+            } catch (error) {
+                console.error('Error loading sample:', error);
+                alert('Could not load sample data. Make sure the API is running.');
+            }
+        }
+    </script>
+</body>
+</html>
